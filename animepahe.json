@@ -6,8 +6,7 @@
     "icon": "https://github.com",
     "url": "https://github.com"
   },
-  "description": "AnimePahe",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "language": "English (SUB/DUB)",
   "streamType": "HLS",
   "quality": "1080p",
@@ -23,4 +22,3 @@
   "supportsSora": true,
   "supportsLuna": true,
   "supportsEclipse": true
-}
