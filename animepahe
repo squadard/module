@@ -1,0 +1,26 @@
+{
+  "sourceName": "AnimePahe",
+  "iconUrl": "https://animepahe.ru",
+  "author": {
+    "name": "ap",
+    "icon": "https://github.com",
+    "url": "https://github.com"
+  },
+  "description": "AnimePahe",
+  "version": "1.0.0",
+  "language": "English (SUB/DUB)",
+  "streamType": "HLS",
+  "quality": "1080p",
+  "baseUrl": "https://animepahe.ru/",
+  "searchBaseUrl": "https://animepahe.ru",
+  "scriptUrl": "https://githubusercontent.com",
+  "type": "anime",
+  "downloadSupport": true,
+  "combo": false,
+  "asyncJS": true,
+  "streamAsyncJS": true,
+  "softsub": false,
+  "supportsSora": true,
+  "supportsLuna": true,
+  "supportsEclipse": true
+}
