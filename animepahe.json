@@ -1,6 +1,6 @@
 {
   "sourceName": "AnimePahe",
-  "iconUrl": "https://animepahe.ru",
+  "iconUrl": "https://animepahe.pw",
   "author": {
     "name": "ap",
     "icon": "https://github.com",
@@ -11,7 +11,7 @@
   "language": "English (SUB/DUB)",
   "streamType": "HLS",
   "quality": "1080p",
-  "baseUrl": "https://animepahe.ru/",
+  "baseUrl": "https://animepahe.pw/",
   "searchBaseUrl": "https://animepahe.ru",
   "scriptUrl": "https://githubusercontent.com",
   "type": "anime",
