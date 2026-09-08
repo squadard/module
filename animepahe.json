@@ -1,18 +1,18 @@
 {
   "sourceName": "AnimePahe",
-  "iconUrl": "https://animepahe.pw",
+  "iconUrl": "https://animepahe.com",
   "author": {
     "name": "ap",
     "icon": "https://github.com",
     "url": "https://github.com"
   },
-  "description": "",
-  "version": "1.0.4",
+  "description": "AnimePahe scraper module for Shirox (Sora/Luna/Eclipse core)",
+  "version": "1.0.5",
   "language": "English (SUB/DUB)",
   "streamType": "HLS",
   "quality": "1080p",
-  "baseUrl": "https://animepahe.pw",
-  "searchBaseUrl": "https://animepahe.pwapi?m=search&q=%s",
+  "baseUrl": "https://animepahe.com",
+  "searchBaseUrl": "https://animepahe.com",
   "scriptUrl": "https://githubusercontent.com",
   "type": "anime",
   "downloadSupport": true,
