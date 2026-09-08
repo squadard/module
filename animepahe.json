@@ -13,7 +13,7 @@
   "quality": "1080p",
   "baseUrl": "https://animepahe.com",
   "searchBaseUrl": "https://animepahe.com",
-  "scriptUrl": "https://githubusercontent.com",
+  "scriptUrl": "https://raw.githubusercontent.com/squadard/module/refs/heads/main/animepahe.js",
   "type": "anime",
   "downloadSupport": true,
   "combo": false,
