@@ -7,12 +7,12 @@
     "url": "https://github.com"
   },
   "description": "",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "language": "English (SUB/DUB)",
   "streamType": "HLS",
   "quality": "1080p",
-  "baseUrl": "https://animepahe.pw/",
-  "searchBaseUrl": "https://animepahe.pw",
+  "baseUrl": "https://animepahe.pw",
+  "searchBaseUrl": "https://animepahe.pwapi?m=search&q=%s",
   "scriptUrl": "https://githubusercontent.com",
   "type": "anime",
   "downloadSupport": true,
@@ -23,3 +23,4 @@
   "supportsSora": true,
   "supportsLuna": true,
   "supportsEclipse": true
+}
