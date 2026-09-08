@@ -12,7 +12,7 @@
   "streamType": "HLS",
   "quality": "1080p",
   "baseUrl": "https://animepahe.pw/",
-  "searchBaseUrl": "https://animepahe.ru",
+  "searchBaseUrl": "https://animepahe.pw",
   "scriptUrl": "https://githubusercontent.com",
   "type": "anime",
   "downloadSupport": true,
