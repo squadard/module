@@ -21,7 +21,7 @@ async function searchResults(keyword) {
 
         const results = json.data.map(item => ({
             title: item.title,
-            image: item.poster,
+            image: item.poster || 'https://animepahe.com/favicon.ico',
             href: `${BASE_URL}/anime/${item.session}`
         }));
 
@@ -62,7 +62,6 @@ async function extractEpisodes(url) {
         if (!response) return JSON.stringify([]);
         const html = await response.text();
 
-        // Retrieve the anime's session ID directly from page source
         const sessionMatch = html.match(/\/anime\/([a-f0-9\-]+)/i) || html.match(/let\s+id\s*=\s*["']([a-f0-9\-]+)["']/i);
         const animeSession = sessionMatch ? sessionMatch[1] : null;
 
@@ -115,7 +114,7 @@ async function extractStreamUrl(apiUrl) {
             
             if (kwikData && kwikData.kwik) {
                 const kwikEmbedUrl = kwikData.kwik;
-                const m3u8Url = await unpackKwik(kwikEmbedUrl);
+                const m3u8Url = await resolveKwikStream(kwikEmbedUrl);
                 
                 if (m3u8Url) {
                     streams.push({
@@ -139,37 +138,70 @@ async function extractStreamUrl(apiUrl) {
 }
 
 /* ==========================================================================
-   UNPACKER & UTILITIES
+   KWIK STREAM RESOLVER & UTILITIES
    ========================================================================== */
 
-async function unpackKwik(embedUrl) {
+async function resolveKwikStream(embedUrl) {
     try {
-        const response = await soraFetch(embedUrl, { 
-            headers: { 
-                "Referer": BASE_URL,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" 
-            } 
-        });
+        const headers = {
+            "Referer": BASE_URL,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        };
+
+        const response = await soraFetch(embedUrl, { headers });
         if (!response) return null;
         const html = await response.text();
 
-        // Locate packed eval block on kwik.cx
+        // Check 1: Direct M3U8 inside script
+        const directMatch = html.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
+        if (directMatch && !directMatch[0].includes('m3u8.png')) {
+            return directMatch[0];
+        }
+
+        // Check 2: Packed JS unpacking
         const packedMatch = html.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]*?\)\)/);
-        if (!packedMatch) return null;
+        if (packedMatch) {
+            const paramsMatch = packedMatch[0].match(/}\('([\s\S]*?)',(\d+),(\d+),'([\s\S]*?)'\.split\('\|'\)/);
+            if (paramsMatch) {
+                const p = paramsMatch[1];
+                const a = parseInt(paramsMatch[2], 10);
+                const c = parseInt(paramsMatch[3], 10);
+                const k = paramsMatch[4].split('|');
 
-        const paramsMatch = packedMatch[0].match(/}\('([\s\S]*?)',(\d+),(\d+),'([\s\S]*?)'\.split\('\|'\)/);
-        if (!paramsMatch) return null;
+                const unpacked = decodePackedJS(p, a, c, k);
+                const m3u8Match = unpacked.match(/https?:\/\/[^"']+\.m3u8[^"']*/);
+                if (m3u8Match) return m3u8Match[0];
+            }
+        }
 
-        const p = paramsMatch[1];
-        const a = parseInt(paramsMatch[2], 10);
-        const c = parseInt(paramsMatch[3], 10);
-        const k = paramsMatch[4].split('|');
+        // Check 3: Extract form token & submit post back if direct parsing fails
+        const actionMatch = html.match(/action=["']([^"']+)["']/i);
+        const tokenMatch = html.match(/name=["']_token["']\s+value=["']([^"']+)["']/i);
 
-        const unpacked = decodePackedJS(p, a, c, k);
-        const m3u8Match = unpacked.match(/https?:\/\/[^"']+\.m3u8[^"']*/);
+        if (actionMatch && tokenMatch) {
+            const actionUrl = actionMatch[1];
+            const token = tokenMatch[1];
 
-        return m3u8Match ? m3u8Match[0] : null;
+            const postResponse = await soraFetch(actionUrl, {
+                method: 'POST',
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': embedUrl
+                },
+                body: `_token=${encodeURIComponent(token)}`
+            });
+
+            if (postResponse) {
+                const postHtml = await postResponse.text();
+                const postM3u8 = postHtml.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
+                if (postM3u8) return postM3u8[0];
+            }
+        }
+
+        return null;
     } catch (e) {
+        console.log('Kwik resolve error: ' + e);
         return null;
     }
 }
