@@ -1,5 +1,5 @@
 // animepahe.js
-const BASE_URL = 'https://animepahe.com';
+const BASE_URL = 'https://animepahe.pw';
 const SEARCH_API = `${BASE_URL}/api?m=search&q=`;
 const RELEASE_API = `${BASE_URL}/api?m=release&id=`;
 const LINKS_API = `${BASE_URL}/api?m=links&id=`;
@@ -21,7 +21,7 @@ async function searchResults(keyword) {
 
         const results = json.data.map(item => ({
             title: item.title,
-            image: item.poster || 'https://animepahe.com/favicon.ico',
+            image: item.poster || `${BASE_URL}/favicon.ico`,
             href: `${BASE_URL}/anime/${item.session}`
         }));
 
@@ -34,16 +34,22 @@ async function searchResults(keyword) {
 
 async function extractDetails(url) {
     try {
-        const response = await soraFetch(url, { headers: makeHeaders() });
+        // Normalize incoming target URL to active domain
+        const targetUrl = url.replace(/https?:\/\/animepahe\.[a-z]+/i, BASE_URL);
+        const response = await soraFetch(targetUrl, { headers: makeHeaders() });
         if (!response) return JSON.stringify([detailsFallback()]);
         const html = await response.text();
 
-        const description = extractFirst(html, /<meta[^>]*name="description"[^>]*content="([^"]+)"/i)
-            || extractFirst(html, /<div class="anime-synopsis">([\s\S]*?)<\/div>/i)
+        const description = extractFirst(html, /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
+            || extractFirst(html, /<div class=["']anime-synopsis["']>([\s\S]*?)<\/div>/i)
             || 'No description available';
 
-        const airdate = extractFirst(html, /<strong>Status:<\/strong>\s*([^<]+)/i) || 'Unknown';
-        const aliases = extractFirst(html, /<strong>Synonyms:<\/strong>\s*([^<]+)/i) || 'No alternative titles';
+        const airdate = extractFirst(html, /<strong>Status:<\/strong>\s*<a[^>]*>([^<]+)<\/a>/i)
+            || extractFirst(html, /<strong>Status:<\/strong>\s*([^<]+)/i) 
+            || 'Unknown';
+
+        const aliases = extractFirst(html, /<strong>Synonyms:<\/strong>\s*([^<]+)/i) 
+            || 'No alternative titles';
 
         return JSON.stringify([{
             description: cleanText(description),
@@ -58,7 +64,8 @@ async function extractDetails(url) {
 
 async function extractEpisodes(url) {
     try {
-        const response = await soraFetch(url, { headers: makeHeaders() });
+        const targetUrl = url.replace(/https?:\/\/animepahe\.[a-z]+/i, BASE_URL);
+        const response = await soraFetch(targetUrl, { headers: makeHeaders() });
         if (!response) return JSON.stringify([]);
         const html = await response.text();
 
@@ -100,7 +107,8 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(apiUrl) {
     const fallback = JSON.stringify({ streams: [], subtitle: '' });
     try {
-        const response = await soraFetch(apiUrl, { headers: makeHeaders() });
+        const targetUrl = apiUrl.replace(/https?:\/\/animepahe\.[a-z]+/i, BASE_URL);
+        const response = await soraFetch(targetUrl, { headers: makeHeaders() });
         if (!response) return fallback;
         
         const json = await response.json();
@@ -152,13 +160,11 @@ async function resolveKwikStream(embedUrl) {
         if (!response) return null;
         const html = await response.text();
 
-        // Check 1: Direct M3U8 inside script
         const directMatch = html.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
         if (directMatch && !directMatch[0].includes('m3u8.png')) {
             return directMatch[0];
         }
 
-        // Check 2: Packed JS unpacking
         const packedMatch = html.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]*?\)\)/);
         if (packedMatch) {
             const paramsMatch = packedMatch[0].match(/}\('([\s\S]*?)',(\d+),(\d+),'([\s\S]*?)'\.split\('\|'\)/);
@@ -174,7 +180,6 @@ async function resolveKwikStream(embedUrl) {
             }
         }
 
-        // Check 3: Extract form token & submit post back if direct parsing fails
         const actionMatch = html.match(/action=["']([^"']+)["']/i);
         const tokenMatch = html.match(/name=["']_token["']\s+value=["']([^"']+)["']/i);
 
