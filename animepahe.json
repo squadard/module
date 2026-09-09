@@ -1,13 +1,13 @@
 {
   "sourceName": "AnimePahe",
-  "iconUrl": "https://animepahe.com",
+  "iconUrl": "https://animepahe.com/favicon.ico",
   "author": {
     "name": "ap",
-    "icon": "https://github.com",
-    "url": "https://github.com"
+    "icon": "https://github.com/squadard.png",
+    "url": "https://github.com/squadard"
   },
   "description": "AnimePahe scraper module for Shirox (Sora/Luna/Eclipse core)",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "language": "English (SUB/DUB)",
   "streamType": "HLS",
   "quality": "1080p",
