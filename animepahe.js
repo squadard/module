@@ -62,8 +62,8 @@ async function extractEpisodes(url) {
         if (!response) return JSON.stringify([]);
         const html = await response.text();
 
-        // Extract internal Session ID for the anime
-        const sessionMatch = html.match(/\/anime\/([a-f0-9\-]+)/i) || html.match(/let\0\s*id\s*=\s*["']([a-f0-9\-]+)["']/i);
+        // Retrieve the anime's session ID directly from page source
+        const sessionMatch = html.match(/\/anime\/([a-f0-9\-]+)/i) || html.match(/let\s+id\s*=\s*["']([a-f0-9\-]+)["']/i);
         const animeSession = sessionMatch ? sessionMatch[1] : null;
 
         if (!animeSession) return JSON.stringify([]);
@@ -72,7 +72,6 @@ async function extractEpisodes(url) {
         let lastPage = 1;
         const episodes = [];
 
-        // Paginate to retrieve all episodes
         do {
             const apiResponse = await soraFetch(`${RELEASE_API}${animeSession}&sort=episode_asc&page=${page}`, { headers: makeHeaders() });
             if (!apiResponse) break;
@@ -123,7 +122,7 @@ async function extractStreamUrl(apiUrl) {
                         title: `Kwik (${qualityKey}p)`,
                         streamUrl: m3u8Url,
                         headers: {
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                             "Referer": "https://kwik.cx/",
                             "Origin": "https://kwik.cx"
                         }
@@ -143,21 +142,21 @@ async function extractStreamUrl(apiUrl) {
    UNPACKER & UTILITIES
    ========================================================================== */
 
-/**
- * Unpacks Dean Edwards' packed JavaScript used by Kwik.cx to reveal m3u8 source URL.
- */
 async function unpackKwik(embedUrl) {
     try {
         const response = await soraFetch(embedUrl, { 
-            headers: { "Referer": BASE_URL, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } 
+            headers: { 
+                "Referer": BASE_URL,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" 
+            } 
         });
         if (!response) return null;
         const html = await response.text();
 
+        // Locate packed eval block on kwik.cx
         const packedMatch = html.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]*?\)\)/);
         if (!packedMatch) return null;
 
-        // Extract unpacking parameters: p, a, c, k
         const paramsMatch = packedMatch[0].match(/}\('([\s\S]*?)',(\d+),(\d+),'([\s\S]*?)'\.split\('\|'\)/);
         if (!paramsMatch) return null;
 
@@ -186,7 +185,9 @@ function decodePackedJS(p, a, c, k) {
 
 function makeHeaders() {
     return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "X-Requested-With": "XMLHttpRequest",
         "Referer": BASE_URL
     };
 }
