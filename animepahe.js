@@ -102,7 +102,7 @@ async function extractEpisodes(url) {
 
 /**
  * Resolves an individual episode page into streamable HLS links.
- * AnimePahe redirects playback execution out to Kwik embed engines.
+ * AnimePahe uses a specific embedded script block to generate video player nodes.
  */
 async function extractStreamUrl(url) {
     const fallback = JSON.stringify({ streams: [], subtitle: '' });
@@ -111,24 +111,37 @@ async function extractStreamUrl(url) {
         if (!response) return fallback;
         const html = await response.text();
 
-        // Search the source HTML for the kwik.cx stream player embeds
-        const kwikMatches = [...html.matchAll(/href=["'](https:\/\/kwik\.cx\/e\/[^"']+)["']/g)];
-        if (kwikMatches.length === 0) return fallback;
+        // 1. Target the internal player selection layout blocks
+        // AnimePahe keeps dynamic streaming embed arrays mapped inside inline scripts or data attributes
+        const kwikMatches = [...html.matchAll(/data-src=["'](https:\/\/kwik\.cx\/e\/[^"']+)["']/g)]
+                        || [...html.matchAll(/src=["'](https:\/\/kwik\.cx\/e\/[^"']+)["']/g)]
+                        || [...html.matchAll(/(https:\/\/kwik\.cx\/e\/[a-zA-Z0-9]+)/g)];
+
+        if (!kwikMatches || kwikMatches.length === 0) {
+            console.log("AnimePahe stream error: No raw kwik player embeds located in source code.");
+            return fallback;
+        }
 
         const streams = [];
+        const seenEmbeds = new Set();
         
-        // Resolve playlists across multiple quality targets (e.g. 720p vs 1080p outputs found on-page)
+        // 2. Loop through discovered embed variants and resolve the master playlists
         for (const match of kwikMatches) {
-            const embedUrl = match[1];
+            const embedUrl = Array.isArray(match) ? match[1] : match;
+            if (seenEmbeds.has(embedUrl)) continue;
+            seenEmbeds.add(embedUrl);
+
             const masterM3u8 = await resolveKwikEmbed(embedUrl);
-            
             if (masterM3u8) {
+                // Determine video tags based on string details safely
+                const label = embedUrl.includes('1080') ? 'Kwik (1080p)' : 'Kwik (720p)';
                 streams.push({
-                    title: embedUrl.includes('1080') ? 'Kwik (1080p)' : 'Kwik (720p)',
+                    title: label,
                     streamUrl: masterM3u8,
                     headers: {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                        "Referer": "https://kwik.cx"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Referer": "https://kwik.cx/",
+                        "Origin": "https://kwik.cx"
                     }
                 });
             }
@@ -136,50 +149,38 @@ async function extractStreamUrl(url) {
 
         return JSON.stringify({ streams: streams, subtitle: '' });
     } catch (error) {
-        console.log('AnimePahe Stream error: ' + error);
+        console.log('AnimePahe Stream extraction error: ' + error);
         return fallback;
     }
 }
 
-/* ==========================================================================
-   INTERNALS & PARSING UTILITIES
-   ========================================================================== */
-
+/**
+ * Grabs the underlying stream address out of the kwik player container.
+ */
 async function resolveKwikEmbed(embedUrl) {
     try {
-        const response = await soraFetch(embedUrl, { headers: { "Referer": BASE_URL } });
+        const response = await soraFetch(embedUrl, { 
+            headers: { 
+                "Referer": BASE_URL,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            } 
+        });
         if (!response) return null;
         const html = await response.text();
 
-        // Kwik scripts obfuscate the raw stream string via custom packed JS blocks.
-        // This evaluations safely tracks down the source evaluation pattern.
-        const packedScript = extractFirst(html, /(eval\(function\(p,a,c,k,e,d\)[\s\S]*?<\/script>)/i);
-        if (!packedScript) return null;
+        // Kwik scripts obfuscate the .m3u8 source URL using standard JS string packing (p,a,c,k,e,d)
+        // This pattern isolates the hidden video initialization values safely
+        const masterUrlMatch = html.match(/source\s*=\s*['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/i)
+                            || html.match(/file\s*:\s*['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/i)
+                            || html.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
 
-        // Locates the underlying master index manifest parameter
-        const directUrl = extractFirst(packedScript, /(https?:\/\/[^"']+\.m3u8[^"']*)/i);
-        return directUrl || null;
+        if (masterUrlMatch) {
+            return masterUrlMatch[1] || masterUrlMatch[0];
+        }
+        
+        return null;
     } catch (e) {
+        console.log("Kwik embed processing breakdown: " + e);
         return null;
     }
-}
-
-function makeHeaders() {
-    return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": BASE_URL
-    };
-}
-
-function extractFirst(html, regex) {
-    const match = html.match(regex);
-    return match ? match[1].trim() : '';
-}
-
-function cleanText(text) {
-    return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function detailsFallback() {
-    return { description: 'No description available', airdate: 'Unknown', aliases: 'No alternative titles' };
 }
