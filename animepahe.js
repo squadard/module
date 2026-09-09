@@ -1,6 +1,6 @@
 // animepahe.js
 const BASE_URL = 'https://animepahe.com';
-const SEARCH_API = `${BASE_URL}/api?m=search&q=`;
+const SEARCH_API = `${BASE_URL}/api?m=search&l=8&q=`; // Added mandatory page limit parameter
 const EPISODE_API = `${BASE_URL}/api?m=release&id=`;
 
 /* ==========================================================================
@@ -9,20 +9,19 @@ const EPISODE_API = `${BASE_URL}/api?m=release&id=`;
 
 /**
  * Searches animepahe.com using its public internal JSON endpoint.
- * @returns {string} JSON string array of {title, image, href} objects.
  */
 async function searchResults(keyword) {
     try {
         const query = (keyword || '').trim();
         if (!query) return JSON.stringify([]);
 
-        // Explicitly encode components to completely prevent NXDOMAIN/hostname typos
         const requestUrl = `${SEARCH_API}${encodeURIComponent(query)}`;
         const response = await soraFetch(requestUrl, { headers: makeHeaders() });
         if (!response) return JSON.stringify([]);
         
         const json = await response.json();
-        if (!json || !Array.isArray(json.data)) return JSON.stringify([]);
+        // Fallback checks to prevent empty structural array loops
+        if (!json || !json.data || !Array.isArray(json.data)) return JSON.stringify([]);
 
         const results = json.data.map(item => ({
             title: item.title,
@@ -46,7 +45,6 @@ async function extractDetails(url) {
         if (!response) return JSON.stringify([detailsFallback()]);
         const html = await response.text();
 
-        // Extract using regex layers similar to your template
         const description = extractFirst(html, /<meta[^>]*name="description"[^>]*content="([^"]+)"/i)
             || extractFirst(html, /<div class="anime-synopsis">([\s\S]*?)<\/div>/i)
             || 'No description available';
@@ -67,7 +65,6 @@ async function extractDetails(url) {
 
 /**
  * Resolves the underlying page to retrieve the Anime ID and fetch all episodes via AnimePahe's paginated layout.
- * @returns {string} JSON string array of {href, number} objects.
  */
 async function extractEpisodes(url) {
     try {
@@ -75,34 +72,42 @@ async function extractEpisodes(url) {
         if (!response) return JSON.stringify([]);
         const html = await response.text();
 
-        // AnimePahe embeds a release ID variable in their raw HTML profile scripts
-        const idMatch = html.match(/let\s+id\s*=\s*["']([^"']+)["']/i) 
-                     || html.match(/&id=([a-f0-9\-]+)/i);
-        if (!idMatch) return JSON.stringify([]);
-        const animeId = idMatch[1];
+        // Extracts the unique release ID from the page body source
+        const ogUrlMatch = html.match(/<meta\s+property=["']og:url["']\s+content=["'][^"']+\/anime\/[^"']+\/(\d+)["']/i)
+                        || html.match(/\/anime\/[a-f0-9\-]+\/(\d+)/i);
+                        
+        let animeId = ogUrlMatch ? ogUrlMatch[1] : null;
 
-        // Fetch page 1 of the releases API (Contains up to 30 episodes usually)
+        if (!animeId) {
+            const scriptMatch = html.match(/id\s*:\s*["']?([a-f0-9\-]+)["']?/i)
+                             || html.match(/let\s+id\s*=\s*["']([a-f0-9\-]+)["']/i);
+            if (scriptMatch) animeId = scriptMatch[1];
+        }
+
+        if (!animeId) return JSON.stringify([]);
+
+        // Fetch paginated episode payload
         const apiResponse = await soraFetch(`${EPISODE_API}${animeId}&sort=episode_asc&page=1`, { headers: makeHeaders() });
         if (!apiResponse) return JSON.stringify([]);
+        
         const json = await apiResponse.json();
+        const rawEpisodes = (json && json.data && Array.isArray(json.data)) ? json.data : [];
+        if (rawEpisodes.length === 0) return JSON.stringify([]);
 
-        if (!json || !Array.isArray(json.data)) return JSON.stringify([]);
-
-        const episodes = json.data.map(ep => ({
-            href: `${url}/${ep.session}`, // Formulates unique Sora item context tracking
+        const episodes = rawEpisodes.map(ep => ({
+            href: `${BASE_URL}/play/${animeId}/${ep.session}`,
             number: parseInt(ep.episode, 10) || 1
         }));
 
         return JSON.stringify(episodes);
     } catch (error) {
-        console.log('AnimePahe Episodes error: ' + error);
+        console.log('AnimePahe Episode compilation error: ' + error);
         return JSON.stringify([]);
     }
 }
 
 /**
- * Resolves an individual episode page into streamable HLS links.
- * AnimePahe uses a specific embedded script block to generate video player nodes.
+ * Resolves an individual episode page into streamable HLS links from kwik player frames.
  */
 async function extractStreamUrl(url) {
     const fallback = JSON.stringify({ streams: [], subtitle: '' });
@@ -111,36 +116,28 @@ async function extractStreamUrl(url) {
         if (!response) return fallback;
         const html = await response.text();
 
-        // 1. Target the internal player selection layout blocks
-        // AnimePahe keeps dynamic streaming embed arrays mapped inside inline scripts or data attributes
         const kwikMatches = [...html.matchAll(/data-src=["'](https:\/\/kwik\.cx\/e\/[^"']+)["']/g)]
-                        || [...html.matchAll(/src=["'](https:\/\/kwik\.cx\/e\/[^"']+)["']/g)]
-                        || [...html.matchAll(/(https:\/\/kwik\.cx\/e\/[a-zA-Z0-9]+)/g)];
+                        || [...html.matchAll(/src=["'](https:\/\/kwik\.cx\/e\/[^"']+)["']/g)];
 
-        if (!kwikMatches || kwikMatches.length === 0) {
-            console.log("AnimePahe stream error: No raw kwik player embeds located in source code.");
-            return fallback;
-        }
+        if (!kwikMatches || kwikMatches.length === 0) return fallback;
 
         const streams = [];
         const seenEmbeds = new Set();
         
-        // 2. Loop through discovered embed variants and resolve the master playlists
         for (const match of kwikMatches) {
-            const embedUrl = Array.isArray(match) ? match[1] : match;
+            const embedUrl = match[1];
             if (seenEmbeds.has(embedUrl)) continue;
             seenEmbeds.add(embedUrl);
 
             const masterM3u8 = await resolveKwikEmbed(embedUrl);
             if (masterM3u8) {
-                // Determine video tags based on string details safely
                 const label = embedUrl.includes('1080') ? 'Kwik (1080p)' : 'Kwik (720p)';
                 streams.push({
                     title: label,
                     streamUrl: masterM3u8,
                     headers: {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                        "Referer": "https://kwik.cx/",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                        "Referer": "https://kwik.cx",
                         "Origin": "https://kwik.cx"
                     }
                 });
@@ -149,38 +146,48 @@ async function extractStreamUrl(url) {
 
         return JSON.stringify({ streams: streams, subtitle: '' });
     } catch (error) {
-        console.log('AnimePahe Stream extraction error: ' + error);
         return fallback;
     }
 }
 
-/**
- * Grabs the underlying stream address out of the kwik player container.
- */
+/* ==========================================================================
+   INTERNALS & PARSING UTILITIES
+   ========================================================================== */
+
 async function resolveKwikEmbed(embedUrl) {
     try {
         const response = await soraFetch(embedUrl, { 
-            headers: { 
-                "Referer": BASE_URL,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            } 
+            headers: { "Referer": BASE_URL, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } 
         });
         if (!response) return null;
         const html = await response.text();
 
-        // Kwik scripts obfuscate the .m3u8 source URL using standard JS string packing (p,a,c,k,e,d)
-        // This pattern isolates the hidden video initialization values safely
         const masterUrlMatch = html.match(/source\s*=\s*['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/i)
                             || html.match(/file\s*:\s*['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/i)
                             || html.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
 
-        if (masterUrlMatch) {
-            return masterUrlMatch[1] || masterUrlMatch[0];
-        }
-        
-        return null;
+        return masterUrlMatch ? masterUrlMatch[1] : null;
     } catch (e) {
-        console.log("Kwik embed processing breakdown: " + e);
         return null;
     }
+}
+
+function makeHeaders() {
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": BASE_URL
+    };
+}
+
+function extractFirst(html, regex) {
+    const match = html.match(regex);
+    return match ? match[1].trim() : '';
+}
+
+function cleanText(text) {
+    return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function detailsFallback() {
+    return { description: 'No description available', airdate: 'Unknown', aliases: 'No alternative titles' };
 }
